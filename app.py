@@ -1,86 +1,62 @@
-from flask import Flask, request, abort, jsonify
-import os
-import hmac
-import hashlib
-import base64
+from flask import Flask, request, abort
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMessage
 import requests
+from io import BytesIO
+import random
 
 app = Flask(__name__)
 
-LINE_CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+# ===== LINE Bot 金鑰 =====
+LINE_CHANNEL_ACCESS_TOKEN = twHYAZUU5LxYZcM2gn2/Wzzn8FJSdpZaER077pGBrdjdHDqrpm/mvJskSLSjW9HpM1NFvHWjOhGQCo9B41fudwXM63lqNVSr0DT6F1vo8v6NwPe8oHLZJgb+lOwdr0aXTl+ITeTsaeY0wD2aBjGrpAdB04t89/1O/w1cDnyilFU=
+LINE_CHANNEL_SECRET = 5b97caed1ccc3bd56cc6e2278b287273
+line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-LINE_REPLY_ENDPOINT = 'https://api.line.me/v2/bot/message/reply'
-LINE_CONTENT_ENDPOINT = 'https://api-data.line.me/v2/bot/message/{messageId}/content'
-
-
-def verify_signature(request_body, signature):
-    hash_value = hmac.new(LINE_CHANNEL_SECRET.encode('utf-8'), request_body, hashlib.sha256).digest()
-    expected_signature = base64.b64encode(hash_value).decode('utf-8')
-    return hmac.compare_digest(expected_signature, signature)
-
-
-def analyze_image_with_ai(image_bytes):
-    # 目前是示範用的假回覆，你之後可以改成 AI 模型判讀
-    return {
-        "grade": "Stage 2",
-        "confidence": 0.85,
-        "note": "這是範例結果，你可以之後改成真的 AI 判讀"
-    }
-
+# 壓傷分級模擬資料
+pressure_ulcer_levels = {
+    1: "壓傷第1級：皮膚完整，但可能紅腫或疼痛",
+    2: "壓傷第2級：部分皮膚破損，可能有水泡或淺層潰瘍",
+    3: "壓傷第3級：皮膚全層破損，可能見到脂肪組織",
+    4: "壓傷第4級：皮膚及組織深層破損，可能見到肌肉、骨頭或支撐結構"
+}
 
 @app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers.get('X-Line-Signature', '')
-    body = request.get_data()
-
-    if not verify_signature(body, signature):
+    signature = request.headers['X-Line-Signature']
+    body = request.get_data(as_text=True)
+    try:
+        handler.handle(body, signature)
+    except InvalidSignatureError:
         abort(400)
+    return 'OK'
 
-    events = request.json.get('events', [])
-    for event in events:
-        if event.get('type') != 'message':
-            continue
+# 處理文字訊息
+@handler.add(MessageEvent, message=TextMessage)
+def handle_text(event):
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text="請傳壓傷照片給我，我會分析分級。")
+    )
 
-        message = event.get('message', {})
-        if message.get('type') != 'image':
-            continue
-
-        reply_token = event.get('replyToken')
-        message_id = message.get('id')
-
-        # 抓取圖片
-        headers = {'Authorization': f'Bearer {LINE_CHANNEL_ACCESS_TOKEN}'}
-        content_url = LINE_CONTENT_ENDPOINT.format(messageId=message_id)
-        image_response = requests.get(content_url, headers=headers)
-
-        if image_response.status_code != 200:
-            reply_text = "圖片下載失敗"
-        else:
-            image_bytes = image_response.content
-            ai_result = analyze_image_with_ai(image_bytes)
-
-            reply_text = (
-                f"壓傷分級：{ai_result['grade']}\n"
-                f"信心度：{ai_result['confidence']}\n"
-                f"備註：{ai_result['note']}"
-            )
-
-        # 回覆給使用者
-        reply_data = {
-            "replyToken": reply_token,
-            "messages": [{"type": "text", "text": reply_text}]
-        }
-
-        requests.post(LINE_REPLY_ENDPOINT,
-                      headers={
-                          "Content-Type": "application/json",
-                          "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"
-                      },
-                      json=reply_data)
-
-    return jsonify({"status": "ok"})
-
+# 處理圖片訊息
+@handler.add(MessageEvent, message=ImageMessage)
+def handle_image(event):
+    # 取得圖片內容
+    message_content = line_bot_api.get_message_content(event.message.id)
+    image_data = BytesIO(message_content.content)
+    
+    # ===== 模擬 AI 分析結果 =====
+    # 這裡隨機產生分級，也可以改成 GPT-4V 或其他模型
+    level = random.randint(1, 4)
+    ai_reply = pressure_ulcer_levels[level]
+    
+    # 回覆 LINE 使用者
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=f"AI 分析結果：{ai_reply}")
+    )
 
 if __name__ == "__main__":
-    app.run(port=5000)
+    app.run(host="0.0.0.0", port=5000)
