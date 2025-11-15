@@ -2,9 +2,9 @@ from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMessage
-import requests
 from io import BytesIO
 import random
+import os
 
 app = Flask(__name__)
 
@@ -14,7 +14,6 @@ LINE_CHANNEL_SECRET = "5b97caed1ccc3bd56cc6e2278b287273"
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# 壓傷分級模擬資料
 pressure_ulcer_levels = {
     1: "壓傷第1級：皮膚完整，但可能紅腫或疼痛",
     2: "壓傷第2級：部分皮膚破損，可能有水泡或淺層潰瘍",
@@ -26,37 +25,33 @@ pressure_ulcer_levels = {
 def callback():
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
+    print("收到 Webhook 訊息")
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
+        print("Invalid Signature")
         abort(400)
     return 'OK'
 
-# 處理文字訊息
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text(event):
+    print(f"收到文字：{event.message.text}")
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text="請傳壓傷照片給我，我會分析分級。")
     )
 
-# 處理圖片訊息
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
-    # 取得圖片內容
-    message_content = line_bot_api.get_message_content(event.message.id)
-    image_data = BytesIO(message_content.content)
-    
-    # ===== 模擬 AI 分析結果 =====
-    # 這裡隨機產生分級，也可以改成 GPT-4V 或其他模型
+    print("收到圖片！")
     level = random.randint(1, 4)
     ai_reply = pressure_ulcer_levels[level]
-    
-    # 回覆 LINE 使用者
+    print(f"回覆文字：{ai_reply}")
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=f"AI 分析結果：{ai_reply}")
     )
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
