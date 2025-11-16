@@ -5,7 +5,6 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMess
 
 import os
 import base64
-from io import BytesIO
 from openai import OpenAI
 
 # ===== OpenAI Client =====
@@ -14,9 +13,9 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 # ===== Flask =====
 app = Flask(__name__)
 
-# ===== LINE Bot Keys =====
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("twHYAZUU5LxYZcM2gn2/Wzzn8FJSdpZaER077pGBrdjdHDqrpm/mvJskSLSjW9HpM1NFvHWjOhGQCo9B41fudwXM63lqNVSr0DT6F1vo8v6NwPe8oHLZJgb+lOwdr0aXTl+ITeTsaeY0wD2aBjGrpAdB04t89/1O/w1cDnyilFU=")
-LINE_CHANNEL_SECRET = os.environ.get("5b97caed1ccc3bd56cc6e2278b287273")
+# ===== LINE Bot Keys（從 Render 環境變數讀） =====
+LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
+LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -26,7 +25,6 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature', '')
-
     body = request.get_data(as_text=True)
 
     try:
@@ -34,7 +32,6 @@ def callback():
     except InvalidSignatureError:
         return abort(400)
 
-    # ⚠ 一定要回傳 200
     return "OK", 200
 
 
@@ -42,11 +39,7 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_text(event):
     reply = "請傳送壓傷照片，我會用 AI 協助判斷分級（1～4級）。"
-
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply)
-    )
+    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
 
 
 # ===== Image Message =====
@@ -67,12 +60,10 @@ def handle_image(event):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "請根據圖片判斷壓傷分級（1～4級）。"},
+                        {"type": "text", "text": "請根據圖片判斷壓傷分級（1～4級），並說明理由。"},
                         {
                             "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}"
-                            }
+                            "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
                         }
                     ]
                 }
@@ -82,13 +73,10 @@ def handle_image(event):
         ai_text = response.choices[0].message.content
 
     except Exception as e:
+        print("AI 錯誤：", e)
         ai_text = "AI 分析失敗，請稍後再試。"
 
-    # 4. 回覆
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=f"AI 分析結果：\n{ai_text}")
-    )
+    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_text))
 
 
 # ===== Run =====
