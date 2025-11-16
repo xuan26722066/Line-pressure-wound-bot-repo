@@ -45,47 +45,53 @@ def handle_text(event):
     )
 
 # ===== 圖片訊息處理 (GPT-4V 分級) =====
+from io import BytesIO
+import base64
+
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     print("收到圖片！")
 
-    # 1️⃣ 下載 LINE 圖片
+    # 1️⃣ 從 LINE 下載圖片
     message_content = line_bot_api.get_message_content(event.message.id)
-    image_bytes = BytesIO(message_content.content)
+    image_bytes = message_content.content  # <-- 真正圖片 bytes
 
-    # 2️⃣ 暫存圖片到 /tmp，產生唯一檔名
-    file_name = f"/tmp/{str(uuid.uuid4())}.jpg"
-    with open(file_name, "wb") as f:
-        f.write(image_bytes.getbuffer())
+    # 2️⃣ 把圖片轉成 base64（OpenAI 規定格式）
+    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-    # 3️⃣ 產生 GPT 可讀 URL
-    # Render /tmp 無法公開，建議換成 Imgur/S3 外部圖床
-    # 這裡先用示意 URL，部署時需替換
-    image_url = f"https://your-public-image-url.com/{file_name.split('/')[-1]}"
-    print(f"圖片 URL: {image_url}")
-
-    # 4️⃣ 呼叫 GPT-4V 分析圖片
+    # 3️⃣ 呼叫 GPT-4o 分析圖片
     try:
         response = openai.chat.completions.create(
-            model="gpt-4o-v1",
+            model="gpt-4o-mini",  # 你可以改 gpt-4o 或 gpt-4.1 系列
             messages=[
-                {"role": "system", "content": "你是一名護理師，負責判斷壓傷分級（1~4級）。"},
-                {"role": "user", "content": f"分析這張圖片的壓傷分級，請直接告訴我 1～4 級。圖片 URL: {image_url}"}
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "請分析這張圖片的壓傷分級（1~4級）。給我等級與原因。"},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            }
+                        }
+                    ]
+                }
             ]
         )
 
         ai_reply = response.choices[0].message["content"]
-        print(f"GPT-4V 回覆：{ai_reply}")
+        print("AI 分析結果：", ai_reply)
 
     except Exception as e:
+        print("GPT 錯誤：", e)
         ai_reply = "AI 分析失敗，請稍後再試。"
-        print(f"GPT 呼叫錯誤：{e}")
 
-    # 5️⃣ 回覆 LINE 使用者
+    # 4️⃣ 回覆給 LINE 使用者
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=f"AI 分析結果：{ai_reply}")
     )
+
 
 # ===== Flask 啟動 =====
 if __name__ == "__main__":
