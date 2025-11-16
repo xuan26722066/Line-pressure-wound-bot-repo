@@ -4,6 +4,11 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMessage
 import random
 import os
+import openai
+
+
+# 從環境變數讀取 API Key
+openai.api_key = os.environ.get("OPENAI_API_KEY")
 
 # ===== 初始化 Flask =====
 app = Flask(__name__)
@@ -49,19 +54,36 @@ def handle_text(event):
     )
 
 # ===== 圖片訊息處理 =====
+from io import BytesIO
+
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     print("收到圖片！")
 
-    # 模擬 AI 分析
-    level = random.randint(1, 4)
-    ai_reply = pressure_ulcer_levels[level]
+    # 1️⃣ 下載 LINE 圖片
+    message_content = line_bot_api.get_message_content(event.message.id)
+    image_bytes = BytesIO(message_content.content)
 
-    print(f"回覆文字：{ai_reply}")
+    # 2️⃣ 呼叫 GPT-4V 分析圖片
+    response = openai.chat.completions.create(
+        model="gpt-4.1-mini",  # 或 gpt-4o-v1，如果支援影像
+        messages=[
+            {"role": "system", "content": "你是一名護理師，負責判斷壓傷分級（1~4級）。"},
+            {"role": "user", "content": "分析這張圖片的壓傷分級，請直接告訴我 1～4 級。"}
+        ],
+        input=image_bytes
+    )
+
+    # 3️⃣ 取得 AI 回覆
+    ai_reply = response.choices[0].message["content"]
+    print(f"GPT-4V 回覆：{ai_reply}")
+
+    # 4️⃣ 回覆 LINE 使用者
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=f"AI 分析結果：{ai_reply}")
     )
+
 
 # ===== Flask 啟動 =====
 if __name__ == "__main__":
