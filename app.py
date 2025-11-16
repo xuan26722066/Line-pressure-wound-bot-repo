@@ -8,6 +8,19 @@ import os
 
 app = Flask(__name__)
 
+@app.route("/callback", methods=['POST'])
+def callback():
+    signature = request.headers['X-Line-Signature']  # 取得 LINE 簽名
+    body = request.get_data(as_text=True)            # 取得訊息內容
+    print("收到 Webhook 訊息")                        # Debug log
+    try:
+        handler.handle(body, signature)             # 交給 LINE SDK 處理
+    except InvalidSignatureError:
+        print("Invalid Signature")                  # Debug log
+        abort(400)                                  # LINE 收不到錯誤訊息
+    return 'OK'                                     # 成功回傳 200
+
+
 # ===== LINE Bot 金鑰 =====
 LINE_CHANNEL_ACCESS_TOKEN = "twHYAZUU5LxYZcM2gn2/Wzzn8FJSdpZaER077pGBrdjdHDqrpm/mvJskSLSjW9HpM1NFvHWjOhGQCo9B41fudwXM63lqNVSr0DT6F1vo8v6NwPe8oHLZJgb+lOwdr0aXTl+ITeTsaeY0wD2aBjGrpAdB04t89/1O/w1cDnyilFU="
 LINE_CHANNEL_SECRET = "5b97caed1ccc3bd56cc6e2278b287273"
