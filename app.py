@@ -34,13 +34,11 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
         print("Invalid signature!")
         abort(400)
-
     return "OK", 200
 
 # ===== 處理文字訊息 =====
@@ -53,7 +51,7 @@ def handle_text(event):
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     try:
-        # 1️⃣ 從 LINE 下載圖片
+        # 1️⃣ 下載 LINE 圖片
         message_content = line_bot_api.get_message_content(event.message.id)
         image_bytes = message_content.content
         print(f"[DEBUG] 下載圖片成功，大小: {len(image_bytes)} bytes")
@@ -73,33 +71,46 @@ def handle_image(event):
         if not image_url:
             raise ValueError("Cloudinary 未回傳有效 URL")
 
-        # 3️⃣ 呼叫 GPT-4V 分析壓傷
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        # 3️⃣ GPT 先判斷圖片是否為壓傷
+        check_response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": "你是一名專業護理師，負責判斷壓傷分級（1~4級）。"
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "請根據以下圖片判斷壓傷分級（1~4級），並簡述理由。"},
-                        {"type": "image_url", "image_url": {"url": image_url}}
-                    ]
+                {"role": "system", "content": "你是一名專業護理師。"},
+                {"role": "user", "content": [
+                    {"type": "text", "text": "請判斷這張圖片是否為壓傷，如果不是壓傷，回覆 '不是壓傷圖片'，如果是，再分析分級。"},
+                     {"type": "image_url", "image_url": {"url": image_url}}]
                 }
             ]
         )
 
-        ai_text = response.choices[0].message["content"]
-        print(f"[DEBUG] GPT 回覆: {ai_text}")
+        check_text = check_response.choices[0].message["content"]
+        print(f"[DEBUG] 圖片檢查結果: {check_text}")
+
+        # 4️⃣ 如果是壓傷，呼叫 GPT 分析分級
+        if "不是壓傷圖片" in check_text:
+            ai_text = "這張圖片不是壓傷圖片，無法分析分級。"
+        else:
+            # 分級分析
+            grade_response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "你是一名專業護理師，負責判斷壓傷分級（1~4級）。"},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": "請分析下圖壓傷分級（1~4級），並簡述理由。"},
+                        {"type": "image_url", "image_url": {"url": image_url}}
+                    ]}
+                ]
+            )
+            ai_text = grade_response.choices[0].message["content"]
+            print(f"[DEBUG] GPT 分級結果: {ai_text}")
 
     except Exception as e:
         print(f"[ERROR] 發生錯誤: {e}")
         ai_text = "AI 分析失敗，請稍後再試。"
 
-    # 4️⃣ 回覆使用者
+    # 5️⃣ 回覆使用者
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_text))
+
 
 # ===== 啟動 Flask =====
 if __name__ == "__main__":
