@@ -72,4 +72,43 @@ def handle_image(event):
             "你是一名專業護理師，負責判斷壓傷分級（1～4級）。\n"
             "分級標準：\n"
             "1級：皮膚完整但紅腫或疼痛\n"
-            "2
+            "2級：部分皮膚破損，可能有水泡或淺層潰瘍\n"
+            "3級：皮膚全層破損，可能見到脂肪組織\n"
+            "4級：皮膚及組織深層破損，可能見到肌肉、骨頭\n"
+            "請分析下圖壓傷分級，並依照以下 JSON 格式回覆：\n"
+            '{"level": X, "reason": "簡短理由"}\n'
+            "只輸出 JSON，不要多餘文字。"
+        )
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": prompt_system},
+                {"role": "user", "content": [{"type": "text", "text": "請分析下圖壓傷分級"}, 
+                                              {"type": "image_url", "image_url": {"url": image_url}}]}
+            ]
+        )
+
+        ai_text_raw = response.choices[0].message["content"]
+        print("GPT 回覆原始內容:", ai_text_raw)
+
+        # 嘗試解析 JSON
+        try:
+            ai_json = json.loads(ai_text_raw)
+            ai_text = f"壓傷分級: {ai_json.get('level')}\n原因: {ai_json.get('reason')}"
+        except Exception:
+            # 若 GPT 回覆不是正確 JSON，就直接回傳文字
+            ai_text = ai_text_raw
+
+    except Exception as e:
+        print("錯誤：", e)
+        ai_text = "AI 分析失敗，請稍後再試。"
+
+    # 4️⃣ 回覆使用者
+    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_text))
+
+
+# ===== 啟動 Flask =====
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
