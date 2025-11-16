@@ -28,7 +28,7 @@ LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# ===== Callback 路由 =====
+# ===== Callback =====
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
@@ -46,7 +46,7 @@ def callback():
 def handle_text(event):
     line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(text="請傳送壓傷照片，我會用 AI 幫你分析分級（1～4級）。")
+        TextSendMessage(text="請傳送壓傷照片，我會使用 AI 幫你分析分級（1～4級）。")
     )
 
 # ===== 處理圖片訊息 =====
@@ -56,8 +56,9 @@ def handle_image(event):
         # 1️⃣ 下載 LINE 圖片
         content = line_bot_api.get_message_content(event.message.id)
         image_bytes = content.content
+        print("抓到圖片 bytes 長度:", len(image_bytes))
 
-        # 2️⃣ 上傳到 Cloudinary
+        # 2️⃣ 上傳至 Cloudinary
         upload_result = cloudinary.uploader.upload(
             BytesIO(image_bytes),
             folder="line-uploads",
@@ -66,39 +67,33 @@ def handle_image(event):
         image_url = upload_result.get("secure_url")
         print("圖片已上傳至 Cloudinary:", image_url)
 
-        # 3️⃣ GPT-4o 分析圖片
-        system_prompt = (
-            "你是一名專業護理師，負責判斷壓傷分級（1～4級）。"
-            "請嚴格依照壓傷分級特徵比對，不能隨機猜測。"
-            "若圖片不是傷口或無法判斷 → 回覆『無法判斷或非壓傷』。"
-        )
+        if not image_url:
+            raise Exception("Cloudinary 上傳失敗")
 
-        user_prompt = [
-            {
-                "type": "text",
-                "text": (
-                    "請依照以下流程判斷壓傷：\n"
-                    "步驟1：判斷是否看得清楚皮膚表面，若否 → 回覆『無法判斷或非壓傷』。\n"
-                    "步驟2：逐項比對壓傷特徵：\n"
-                    "【第一級】完整皮膚、紅或粉紅、按壓不變白\n"
-                    "【第二級】表皮破損或淺層傷口、水泡可能存在、淺紅濕潤\n"
-                    "【第三級】皮膚全層破損、可見脂肪層、傷口較深但未見肌肉或骨頭\n"
-                    "【第四級】深層組織破壞，可見肌肉、肌腱或骨頭\n"
-                    "步驟3：回覆格式：\n"
-                    "是否為壓傷：是/否\n"
-                    "分級（若不符合特徵 → 無法判斷）\n"
-                    "列出比對到的特徵\n"
-                    "不要推測或亂回答\n"
-                    f"請分析以下圖片： {image_url}"
-                )
-            }
-        ]
-
+        # 3️⃣ 呼叫 GPT-4V 進行分析
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",  # 可改成 gpt-4o 或其他 GPT-4V 版本
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
+                {
+                    "role": "system",
+                    "content": "你是一名專業護理師，負責判斷壓傷分級（1~4級）。"
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                "請分析這張圖片的壓傷分級（1~4級），"
+                                "如果不是壓傷請回覆「不是壓傷」，並說明理由。"
+                            )
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": image_url}
+                        }
+                    ]
+                }
             ]
         )
 
@@ -109,8 +104,11 @@ def handle_image(event):
         print("錯誤：", e)
         ai_text = "AI 分析失敗，請稍後再試。"
 
-    # 4️⃣ 回覆使用者
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_text))
+    # 4️⃣ 回覆 LINE 使用者
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=ai_text)
+    )
 
 # ===== 啟動 Flask =====
 if __name__ == "__main__":
