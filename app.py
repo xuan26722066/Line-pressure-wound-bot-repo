@@ -4,7 +4,6 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage, ImageMessage
 
 import os
-import base64
 from io import BytesIO
 import cloudinary
 import cloudinary.uploader
@@ -29,7 +28,7 @@ LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# ===== Callback =====
+# ===== Callback 路由 =====
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
@@ -39,6 +38,7 @@ def callback():
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
+
     return "OK", 200
 
 # ===== 處理文字訊息 =====
@@ -53,11 +53,11 @@ def handle_text(event):
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     try:
-        # 下載 LINE 圖片
+        # 1️⃣ 從 LINE 下載圖片
         content = line_bot_api.get_message_content(event.message.id)
         image_bytes = content.content
 
-        # 上傳到 Cloudinary
+        # 2️⃣ 上傳到 Cloudinary
         upload_result = cloudinary.uploader.upload(
             BytesIO(image_bytes),
             folder="line-uploads",
@@ -66,29 +66,13 @@ def handle_image(event):
         image_url = upload_result.get("secure_url")
         print("圖片已上傳至 Cloudinary:", image_url)
 
-        # 呼叫 GPT 分析
+        # 3️⃣ 呼叫 GPT-4o 進行影像分析
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
+            model="gpt-4o",
+            input=[
+                {"role": "system", "content": "你是一名專業護理師，負責判斷壓傷分級（1～4級）。"},
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "請根據下圖判斷壓傷分級（1～4級），並說明原因。"},
-                        {"type": "image_url", "image_url": {"url": image_url}}
-                    ]
-                }
-            ]
-        )
-        ai_text = response.choices[0].message["content"]
-        print("GPT 回覆:", ai_text)
-
-    except Exception as e:
-        print("錯誤：", e)
-        ai_text = "AI 分析失敗，請稍後再試。"
-
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_text))
-
-# ===== 啟動 Flask =====
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+                        {"type": "text", "text": "請分析下圖壓傷分級（1～4級），並簡述原因。"},
+                        {"type": "input_ima_
