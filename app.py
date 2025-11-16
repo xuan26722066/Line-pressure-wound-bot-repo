@@ -54,12 +54,15 @@ def handle_text(event):
 def handle_image(event):
     try:
         # 1️⃣ 從 LINE 下載圖片
-        content = line_bot_api.get_message_content(event.message.id)
-        image_bytes = content.content
+        message_content = line_bot_api.get_message_content(event.message.id)
+        image_bytes = b""
+        for chunk in message_content.iter_content():
+            image_bytes += chunk
+        image_stream = BytesIO(image_bytes)
 
         # 2️⃣ 上傳到 Cloudinary
         upload_result = cloudinary.uploader.upload(
-            BytesIO(image_bytes),
+            image_stream,
             folder="line-uploads",
             resource_type="image"
         )
@@ -75,4 +78,26 @@ def handle_image(event):
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "請分析下圖壓傷分級（1～4級），並簡述原因。"},
-                        {"type": "input_ima_
+                        {"type": "input_image", "image_url": image_url}
+                    ]
+                }
+            ]
+        )
+
+        ai_text = response.choices[0].message["content"]
+        print("GPT 回覆:", ai_text)
+
+    except Exception as e:
+        print("AI 錯誤：", e)
+        ai_text = "AI 分析失敗，請稍後再試。"
+
+    # 4️⃣ 回覆給 LINE 使用者
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=ai_text)
+    )
+
+# ===== 啟動 Flask =====
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
