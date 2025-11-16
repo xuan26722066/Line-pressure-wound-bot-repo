@@ -57,13 +57,13 @@ def handle_text(event):
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     print("收到圖片！")
-    level = random.randint(1, 4)
-    ai_reply = pressure_ulcer_levels[level]
-    print(f"回覆文字：{ai_reply}")
+    # 立即回覆文字，先保證 LINE 收到 200
     line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(text=f"AI 分析結果：{ai_reply}")
+        TextSendMessage(text="圖片收到，AI 分析中...")
     )
+    
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
