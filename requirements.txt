@@ -1,2 +1,7 @@
-Flask==2.3.2
-requests==2.31.0
+flask
+line-bot-sdk
+requests
+if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
