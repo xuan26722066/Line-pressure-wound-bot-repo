@@ -50,33 +50,38 @@ def handle_image(event):
         content = line_bot_api.get_message_content(event.message.id)
         image_bytes = content.content
 
-        # 2. Base64
+        # 2. Base64 編碼
         image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-        # 3. Call OpenAI
+        # 3. 呼叫 OpenAI（gpt-4o-mini）
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "請根據圖片判斷壓傷分級（1～4級），並說明理由。"},
+                        {"type": "text", "text": "請依圖片判斷壓傷分級（1～4級），並簡述理由。"},
                         {
                             "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}"
+                            }
                         }
                     ]
                 }
             ]
         )
 
-        ai_text = response.choices[0].message.content
+        # 4. 取得 AI 回覆
+        ai_text = response.choices[0].message["content"]
 
     except Exception as e:
         print("AI 錯誤：", e)
         ai_text = "AI 分析失敗，請稍後再試。"
 
+    # 5. 回覆使用者
     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_text))
+
 
 
 # ===== Run =====
